@@ -6,7 +6,7 @@
         {% else %}<a href="/login">Login</a><a class="btn" href="/register">Create account</a>{% endif %}
       </div>
       <a class="navmobile btn secondary" href="/login">Account</a>
-    </div></nav>{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="container"><div class="flash {{cat}}">{{msg}}</div></div>{% endfor %}{% endwith %}<main class="section container"><div class="toprow"><div><div class="eyebrow">Plans</div><h2>Investment scenarios</h2><p class="muted">The figures below are the project specifications you supplied. They are presented as illustrative scenarios, not guaranteed returns.</p></div></div><div class="grid">{% for p in plans %}<div class="card plan"><span class="tag">{{p.name}}</span><h3>${{"{:,.0f}".format(p.amount)}} monthly</h3><div class="price">${{"{:,.0f}".format(p.target)}}</div><div class="target">Illustrative target</div><p class="muted">Maturity: {{p.months}} months</p><a class="btn" href="/invest/{{p.id}}">Select plan</a></div>{% endfor %}</div></main>
+    </div></nav>{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="container"><div class="flash {{cat}}">{{msg}}</div></div>{% endfor %}{% endwith %}<main class="section container"><div class="toprow"><div><div class="eyebrow">Plans</div><h2>Investment plans</h2><p class="muted">Review the amount, projected value and maturity period for each available plan.</p></div></div><div class="grid">{% for p in plans %}<div class="card plan"><span class="tag">{{p.name}}</span><h3>${{"{:,.0f}".format(p.amount)}} monthly</h3><div class="price">${{"{:,.0f}".format(p.target)}}</div><div class="target">Projected value</div><p class="muted">Maturity: {{p.months}} months</p><a class="btn" href="/invest/{{p.id}}">Select plan</a></div>{% endfor %}</div></main>
 <div id="toast-wrap"></div>
 <style>
 #toast-wrap{position:fixed;right:18px;bottom:18px;width:min(390px,calc(100vw - 28px));z-index:9999}
@@ -40,4 +40,4 @@
  let i=0; function next(){show(items[i++%items.length]);setTimeout(next,9000)} setTimeout(next,1800);
 })();
 </script>
-<footer class="footer"><div class="container">Nova Investment · Final-year project application · Customer support: <a href="mailto:novainvestment965@gmail.com">novainvestment965@gmail.com</a></div></footer></body></html>
+<footer class="footer"><div class="container">Nova Investment · Customer support: <a href="mailto:novainvestment965@gmail.com">novainvestment965@gmail.com</a></div></footer></body></html>
