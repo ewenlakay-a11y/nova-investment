@@ -51,6 +51,12 @@ def init_db():
       title TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL
     );
     """)
+    cols=[r[1] for r in c.execute("PRAGMA table_info(transactions)").fetchall()]
+    if "investment_id" not in cols:
+        c.execute("ALTER TABLE transactions ADD COLUMN investment_id INTEGER")
+    invcols=[r[1] for r in c.execute("PRAGMA table_info(investments)").fetchall()]
+    if "payment_submitted_at" not in invcols:
+        c.execute("ALTER TABLE investments ADD COLUMN payment_submitted_at TEXT")
     # Demo/admin accounts for assessment
     if not c.execute("SELECT 1 FROM users WHERE email=?",("demo@novainvestment.local",)).fetchone():
         c.execute("INSERT INTO users(name,email,password,is_admin,created_at) VALUES(?,?,?,?,?)",
@@ -134,10 +140,14 @@ def dashboard():
     inv=c.execute("SELECT * FROM investments WHERE user_id=? ORDER BY id DESC",(uid,)).fetchall()
     tx=c.execute("SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC LIMIT 8",(uid,)).fetchall()
     notifs=c.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 6",(uid,)).fetchall()
-    total=sum(x["amount"] for x in inv if x["status"] in ("pending","active"))
-    projected=sum(x["target"] for x in inv if x["status"] in ("pending","active"))
+    credited=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Bitcoin payment","Deposit"))
+    debited=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem"))
+    balance=max(0, credited-debited)
+    projected=sum(x["target"] for x in inv if x["status"]=="active")
+    roi_value=max(0,projected-balance)
+    roi_percent=(roi_value/balance*100) if balance else 0
     c.close()
-    return render_template("dashboard.html",investments=inv,transactions=tx,notifications=notifs,total=total,projected=projected)
+    return render_template("dashboard.html",investments=inv,transactions=tx,notifications=notifs,total=balance,projected=projected,roi_value=roi_value,roi_percent=roi_percent)
 
 @app.route("/plans")
 def plans(): return render_template("plans.html")
@@ -150,14 +160,14 @@ def invest(plan_id):
     if request.method=="POST":
         maturity=(datetime.now()+timedelta(days=p["months"]*30)).date().isoformat()
         c=db()
-        c.execute("""INSERT INTO investments(user_id,plan,amount,target,status,maturity,created_at)
-                     VALUES(?,?,?,?,?,?,?)""",(session["user_id"],p["name"],p["amount"],p["target"],"pending",maturity,datetime.now().isoformat()))
-        c.execute("""INSERT INTO transactions(user_id,kind,amount,status,note,created_at)
-                     VALUES(?,?,?,?,?,?)""",(session["user_id"],"Investment request",p["amount"],"Pending","Awaiting Bitcoin payment verification",datetime.now().isoformat()))
+        cur=c.execute("INSERT INTO investments(user_id,plan,amount,target,status,maturity,created_at) VALUES(?,?,?,?,?,?,?)",
+                       (session["user_id"],p["name"],p["amount"],p["target"],"awaiting_payment",maturity,datetime.now().isoformat()))
+        inv_id=cur.lastrowid
+        c.execute("INSERT INTO transactions(user_id,kind,amount,status,note,created_at,investment_id) VALUES(?,?,?,?,?,?,?)",
+                  (session["user_id"],"Bitcoin payment",p["amount"],"Awaiting Payment","Investment payment awaiting customer confirmation",datetime.now().isoformat(),inv_id))
         c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",
-                  (session["user_id"],"Investment request received",f"{p['name']} plan request for ${p['amount']:,.0f} was received.",datetime.now().isoformat()))
+                  (session["user_id"],"Payment instructions ready",f"Send ${p['amount']:,.0f} in Bitcoin, then use the payment confirmation button in Wallet.",datetime.now().isoformat()))
         c.commit(); c.close()
-        flash("Investment request created. Follow the Bitcoin payment instructions to complete the request.","success")
         return redirect(url_for("wallet"))
     roi=(p["target"]-p["amount"])/p["amount"]*100
     return render_template("invest.html",plan=p,roi=roi)
@@ -178,11 +188,29 @@ def wallet():
                       (session["user_id"],kind,amount,"Pending","Request awaiting administrator review",datetime.now().isoformat()))
             c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",
                       (session["user_id"],f"{kind} request received",f"${amount:,.2f} {kind.lower()} request is pending review.",datetime.now().isoformat()))
-            c.commit(); c.close()
-            flash(f"{kind} request submitted.","success")
+            c.commit(); c.close(); flash(f"{kind} request submitted.","success")
         return redirect(url_for("wallet"))
-    c=db(); tx=c.execute("SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC",(session["user_id"],)).fetchall(); c.close()
-    return render_template("wallet.html",transactions=tx)
+    c=db(); tx=c.execute("SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC",(session["user_id"],)).fetchall(); inv=c.execute("SELECT * FROM investments WHERE user_id=? AND status IN ('awaiting_payment','payment_submitted','active') ORDER BY id DESC",(session["user_id"],)).fetchall(); c.close()
+    credited=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Bitcoin payment","Deposit"))
+    debited=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem"))
+    balance=max(0,credited-debited)
+    return render_template("wallet.html",transactions=tx,investments=inv,balance=balance)
+
+@app.route("/payment/<int:investment_id>",methods=["POST"])
+@login_required
+def confirm_payment(investment_id):
+    c=db(); inv=c.execute("SELECT * FROM investments WHERE id=? AND user_id=?",(investment_id,session["user_id"])).fetchone()
+    if not inv:
+        c.close(); flash("Investment request not found.","error"); return redirect(url_for("wallet"))
+    if inv["status"]!="awaiting_payment":
+        c.close(); flash("This payment is already awaiting verification or has been processed.","error"); return redirect(url_for("wallet"))
+    submitted_at=datetime.now().isoformat()
+    c.execute("UPDATE investments SET status='payment_submitted', payment_submitted_at=? WHERE id=?",(submitted_at,investment_id))
+    c.execute("UPDATE transactions SET status='Pending Verification', note=? WHERE investment_id=?",
+              ("Customer marked payment as sent; verify the blockchain payment before crediting the account.",investment_id))
+    c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",
+              (session["user_id"],"Payment submitted for verification","Your payment confirmation was received. Please email a screenshot of the payment to "+SUPPORT_EMAIL+". The account is credited only after payment verification." ,datetime.now().isoformat()))
+    c.commit(); c.close(); flash("Payment marked as sent. Verification is pending.","success"); return redirect(url_for("wallet"))
 
 @app.route("/support",methods=["GET","POST"])
 @login_required
@@ -233,9 +261,23 @@ def admin_action():
     typ=request.form.get("type"); rid=request.form.get("id"); action=request.form.get("action")
     c=db()
     if typ=="investment":
-        c.execute("UPDATE investments SET status=? WHERE id=?",("active" if action=="approve" else "rejected",rid))
+        inv=c.execute("SELECT * FROM investments WHERE id=?",(rid,)).fetchone()
+        if inv:
+            new_status="active" if action=="approve" else "rejected"
+            c.execute("UPDATE investments SET status=? WHERE id=?",(new_status,rid))
+            if action=="approve":
+                tx=c.execute("SELECT id FROM transactions WHERE investment_id=?",(inv["id"],)).fetchone()
+                if tx: c.execute("UPDATE transactions SET status='Approved', note=? WHERE id=?",("Bitcoin payment verified by administrator; investment credited.",tx["id"]))
+                c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",(inv["user_id"],"Payment verified","Your Bitcoin payment has been verified and the investment has been credited to your account.",datetime.now().isoformat()))
+            else:
+                c.execute("UPDATE transactions SET status='Rejected', note=? WHERE investment_id=? AND status IN ('Pending Verification','Awaiting Payment')",("Payment could not be verified.",inv["id"]))
+                c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",(inv["user_id"],"Payment review update","The submitted payment could not be verified. Please contact support if you believe this is an error.",datetime.now().isoformat()))
     elif typ=="transaction":
-        c.execute("UPDATE transactions SET status=? WHERE id=?",("Approved" if action=="approve" else "Rejected",rid))
+        tx=c.execute("SELECT * FROM transactions WHERE id=?",(rid,)).fetchone()
+        if tx:
+            new_status="Approved" if action=="approve" else "Rejected"
+            c.execute("UPDATE transactions SET status=? WHERE id=?",(new_status,rid))
+            c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",(tx["user_id"],"Transaction update",f"Your {tx['kind'].lower()} request is now {new_status.lower()}.",datetime.now().isoformat()))
     elif typ=="support":
         reply=request.form.get("reply","").strip()
         c.execute("UPDATE support SET reply=? WHERE id=?",(reply,rid))
