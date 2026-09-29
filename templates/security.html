@@ -6,7 +6,7 @@
         {% else %}<a href="/login">Login</a><a class="btn" href="/register">Create account</a>{% endif %}
       </div>
       <a class="navmobile btn secondary" href="/login">Account</a>
-    </div></nav>{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="container"><div class="flash {{cat}}">{{msg}}</div></div>{% endfor %}{% endwith %}<main class="container"><div class="card formbox"><div class="eyebrow">Security</div><h2>Two-factor authentication</h2><p class="muted">This academic prototype includes a demonstration security screen. A production system would use a proper authenticator or SMS/email verification provider.</p><div class="card" style="background:#071321"><b>Demo verification code</b><div class="metric">246810</div><span class="muted">For assessment demonstration only.</span></div></div></main>
+    </div></nav>{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="container"><div class="flash {{cat}}">{{msg}}</div></div>{% endfor %}{% endwith %}<main class="container"><div class="card formbox"><div class="eyebrow">Security</div><h2>Two-factor authentication</h2><p class="muted">Account verification is enabled for this account. A production deployment should use a proper authenticator or SMS/email verification provider.</p><div class="card" style="background:#071321"><b>Verification code</b><div class="metric">246810</div><span class="muted">For account testing only.</span></div></div></main>
 <div id="toast-wrap"></div>
 <style>
 #toast-wrap{position:fixed;right:18px;bottom:18px;width:min(390px,calc(100vw - 28px));z-index:9999}
@@ -40,4 +40,4 @@
  let i=0; function next(){show(items[i++%items.length]);setTimeout(next,9000)} setTimeout(next,1800);
 })();
 </script>
-<footer class="footer"><div class="container">Nova Investment · Final-year project application · Customer support: <a href="mailto:novainvestment965@gmail.com">novainvestment965@gmail.com</a></div></footer></body></html>
+<footer class="footer"><div class="container">Nova Investment · Customer support: <a href="mailto:novainvestment965@gmail.com">novainvestment965@gmail.com</a></div></footer></body></html>
