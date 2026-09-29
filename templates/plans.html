@@ -1,0 +1,43 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Plans | Nova Investment</title><link rel="stylesheet" href="/static/style.css"></head><body><nav class="nav"><div class="container" style="display:flex;width:92%;align-items:center;justify-content:space-between">
+      <a class="brand" href="/">Nova <span>Investment</span></a>
+      <div class="navlinks">
+        <a href="/">Home</a><a href="/plans">Plans</a>
+        {% if current_user %}<a href="/dashboard">Dashboard</a><a href="/wallet">Wallet</a><a href="/support">Support</a>{% if current_user["is_admin"] %}<a href="/admin">Admin</a>{% endif %}<a href="/logout">Logout</a>
+        {% else %}<a href="/login">Login</a><a class="btn" href="/register">Create account</a>{% endif %}
+      </div>
+      <a class="navmobile btn secondary" href="/login">Account</a>
+    </div></nav>{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="container"><div class="flash {{cat}}">{{msg}}</div></div>{% endfor %}{% endwith %}<main class="section container"><div class="toprow"><div><div class="eyebrow">Plans</div><h2>Investment scenarios</h2><p class="muted">The figures below are the project specifications you supplied. They are presented as illustrative scenarios, not guaranteed returns.</p></div></div><div class="grid">{% for p in plans %}<div class="card plan"><span class="tag">{{p.name}}</span><h3>${{"{:,.0f}".format(p.amount)}} monthly</h3><div class="price">${{"{:,.0f}".format(p.target)}}</div><div class="target">Illustrative target</div><p class="muted">Maturity: {{p.months}} months</p><a class="btn" href="/invest/{{p.id}}">Select plan</a></div>{% endfor %}</div></main>
+<div id="toast-wrap"></div>
+<style>
+#toast-wrap{position:fixed;right:18px;bottom:18px;width:min(390px,calc(100vw - 28px));z-index:9999}
+.toast{background:rgba(7,17,31,.97);border:1px solid rgba(255,255,255,.13);box-shadow:0 20px 60px rgba(0,0,0,.4);border-radius:17px;padding:15px;display:grid;grid-template-columns:40px 1fr 20px;gap:11px;margin-top:10px;transform:translateY(20px);opacity:0;transition:.35s}
+.toast.show{transform:translateY(0);opacity:1}.toasticon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:rgba(94,234,212,.1);color:#5eead4;font-weight:900}.toasttitle{font-weight:850;font-size:13px}.toasttext{color:#9fb0c5;font-size:12px;line-height:1.5;margin-top:3px}.toastclose{border:0;background:none;color:#9fb0c5;cursor:pointer;font-size:18px}
+</style>
+<script>
+(function(){
+ const wrap=document.getElementById('toast-wrap'); if(!wrap)return;
+ const items=[
+  ['₿','Bitcoin market update','Fetching the latest BTC/USD market price…',true],
+  ['↗','Plan update','Investment plans are available to review from $500.',false],
+  ['✓','Account update','Portfolio and transaction information is available in your dashboard.',false],
+  ['🔒','Security update','Use your verification settings to keep your account protected.',false]
+ ];
+ async function btc(){
+  try{
+   const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
+   const d=await r.json(); const p=d.bitcoin.usd;
+   return 'BTC/USD: $'+Number(p).toLocaleString('en-US',{maximumFractionDigits:2});
+  }catch(e){return 'BTC/USD market data is temporarily unavailable.'}
+ }
+ async function show(x){
+  const el=document.createElement('div'); el.className='toast';
+  let t=x[2]; if(x[3])t=await btc();
+  el.innerHTML='<div class="toasticon">'+x[0]+'</div><div><div class="toasttitle">'+x[1]+'</div><div class="toasttext">'+t+'</div></div><button class="toastclose">×</button>';
+  wrap.appendChild(el); requestAnimationFrame(()=>el.classList.add('show'));
+  const close=()=>{el.classList.remove('show');setTimeout(()=>el.remove(),350)};
+  el.querySelector('.toastclose').onclick=close; setTimeout(close,6500);
+ }
+ let i=0; function next(){show(items[i++%items.length]);setTimeout(next,9000)} setTimeout(next,1800);
+})();
+</script>
+<footer class="footer"><div class="container">Nova Investment · Final-year project application · Customer support: <a href="mailto:novainvestment965@gmail.com">novainvestment965@gmail.com</a></div></footer></body></html>
