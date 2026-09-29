@@ -1,46 +1,12 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Home | Nova Investment</title><link rel="stylesheet" href="/static/style.css"></head><body><nav class="nav"><div class="container" style="display:flex;width:92%;align-items:center;justify-content:space-between">
-      <a class="brand" href="/">Nova <span>Investment</span></a>
-      <div class="navlinks">
-        <a href="/">Home</a><a href="/plans">Plans</a>
-        {% if current_user %}<a href="/dashboard">Dashboard</a><a href="/wallet">Wallet</a><a href="/support">Support</a>{% if current_user["is_admin"] %}<a href="/admin">Admin</a>{% endif %}<a href="/logout">Logout</a>
-        {% else %}<a href="/login">Login</a><a class="btn" href="/register">Create account</a>{% endif %}
-      </div>
-      <a class="navmobile btn secondary" href="/login">Account</a>
-    </div></nav>{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="container"><div class="flash {{cat}}">{{msg}}</div></div>{% endfor %}{% endwith %}
-<main><section class="hero container"><div><div class="eyebrow">Investment management platform</div><h1>Build a clearer view of your investment journey.</h1><p>Nova Investment provides a professional portfolio interface for reviewing investment scenarios, tracking requests, managing account activity and communicating with support.</p><div class="actions"><a class="btn" href="/register">Open account</a><a class="btn secondary" href="/plans">View investment plans</a></div><div class="notice">Investment returns shown on this project are illustrative scenarios for academic assessment and are not guaranteed financial returns.</div></div><div class="glass"><span class="tag">MARKET</span><div class="metric">BTC / USD</div><p class="muted">The notification system checks a public market-data endpoint when available. No Bitcoin price is invented when the service is unavailable.</p><div class="card" style="margin-top:16px"><div class="muted">Bitcoin payment address</div><div style="word-break:break-all;margin-top:8px;font-weight:800;font-size:13px">bc1qwe7l499zq0y2l7x59lvnwlft02v0dhzh34q5jy</div></div></div></section>
-<section class="section container"><h2>Investment scenarios</h2><p class="muted">Choose a scenario to see the illustrative target and maturity period.</p><div class="grid">{% for p in plans %}<div class="card plan"><span class="tag">{{p.name}}</span><h3>${{"{:,.0f}".format(p.amount)}} monthly</h3><div class="price">${{"{:,.0f}".format(p.target)}}</div><div class="target">Illustrative target</div><p class="muted">{{p.months}}-month scenario</p><a class="btn secondary" href="/invest/{{p.id}}">Review scenario</a></div>{% endfor %}</div></section></main>
-
-<div id="toast-wrap"></div>
-<style>
-#toast-wrap{position:fixed;right:18px;bottom:18px;width:min(390px,calc(100vw - 28px));z-index:9999}
-.toast{background:rgba(7,17,31,.97);border:1px solid rgba(255,255,255,.13);box-shadow:0 20px 60px rgba(0,0,0,.4);border-radius:17px;padding:15px;display:grid;grid-template-columns:40px 1fr 20px;gap:11px;margin-top:10px;transform:translateY(20px);opacity:0;transition:.35s}
-.toast.show{transform:translateY(0);opacity:1}.toasticon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:rgba(94,234,212,.1);color:#5eead4;font-weight:900}.toasttitle{font-weight:850;font-size:13px}.toasttext{color:#9fb0c5;font-size:12px;line-height:1.5;margin-top:3px}.toastclose{border:0;background:none;color:#9fb0c5;cursor:pointer;font-size:18px}
-</style>
-<script>
-(function(){
- const wrap=document.getElementById('toast-wrap'); if(!wrap)return;
- const items=[
-  ['₿','Bitcoin market update','Fetching the latest BTC/USD market price…',true],
-  ['↗','Plan update','Investment plans are available to review from $500.',false],
-  ['✓','Account update','Portfolio and transaction information is available in your dashboard.',false],
-  ['🔒','Security update','Use your verification settings to keep your account protected.',false]
- ];
- async function btc(){
-  try{
-   const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
-   const d=await r.json(); const p=d.bitcoin.usd;
-   return 'BTC/USD: $'+Number(p).toLocaleString('en-US',{maximumFractionDigits:2});
-  }catch(e){return 'BTC/USD market data is temporarily unavailable.'}
- }
- async function show(x){
-  const el=document.createElement('div'); el.className='toast';
-  let t=x[2]; if(x[3])t=await btc();
-  el.innerHTML='<div class="toasticon">'+x[0]+'</div><div><div class="toasttitle">'+x[1]+'</div><div class="toasttext">'+t+'</div></div><button class="toastclose">×</button>';
-  wrap.appendChild(el); requestAnimationFrame(()=>el.classList.add('show'));
-  const close=()=>{el.classList.remove('show');setTimeout(()=>el.remove(),350)};
-  el.querySelector('.toastclose').onclick=close; setTimeout(close,6500);
- }
- let i=0; function next(){show(items[i++%items.length]);setTimeout(next,9000)} setTimeout(next,1800);
-})();
-</script>
-<footer class="footer"><div class="container">Nova Investment · Final-year project application · Customer support: <a href="mailto:novainvestment965@gmail.com">novainvestment965@gmail.com</a></div></footer></body></html>
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nova Investment</title><link rel="stylesheet" href="/static/style.css"></head><body>
+<nav class="nav"><div class="container navinner"><a class="brand" href="/">Nova <span>Investment</span></a><div class="navlinks"><a href="/">Home</a><a href="/plans">Plans</a>{% if current_user %}<a href="/dashboard">Dashboard</a><a href="/wallet">Wallet</a><a href="/support">Support</a>{% if current_user["is_admin"] %}<a href="/admin">Admin</a>{% endif %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a><a class="btn" href="/register">Create account</a>{% endif %}</div><a class="navmobile btn secondary" href="/login">Account</a></div></nav>
+<main>
+<section class="hero container"><div><div class="eyebrow">Investment management</div><h1>One place to track your money and portfolio.</h1><p>Explore investment plans, fund your account with Bitcoin, monitor balances and follow every request from one clean dashboard.</p><div class="actions"><a class="btn" href="/register">Open account</a><a class="btn secondary" href="/plans">Explore plans</a></div><div class="mini-trust"><span>✓ Account dashboard</span><span>✓ Transaction history</span><span>✓ Customer support</span></div></div><div class="glass hero-market"><div class="market-head"><span class="tag">LIVE MARKET</span><span id="btc-dot" class="live-dot">●</span></div><div class="metric" id="btc-price">BTC / USD</div><div id="btc-change" class="muted">Loading market price…</div><div class="sparkline"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="card payment-preview"><div class="muted">Bitcoin payment address</div><div class="btcaddress">{{btc_address}}</div><button class="btn secondary" onclick="copyBTC()" type="button">Copy address</button></div></div></section>
+<section class="section container"><div class="section-head"><div><div class="eyebrow">Choose a plan</div><h2>Flexible investment options</h2></div><a href="/plans" class="btn secondary">See all plans</a></div><div class="grid">{% for p in plans %}<div class="card plan interactive-plan"><span class="tag">{{p.name}}</span><h3>${{"{:,.0f}".format(p.amount)}} monthly</h3><div class="price">${{"{:,.0f}".format(p.target)}}</div><div class="target">Projected value</div><p class="muted">{{p.months}}-month term</p><a class="btn secondary" href="/invest/{{p.id}}">View plan</a></div>{% endfor %}</div></section>
+<section class="section feature-strip"><div class="container grid feature-grid"><div class="card"><div class="feature-icon">₿</div><h3>Bitcoin funding</h3><p class="muted">Follow a clear payment flow, confirm when you've sent funds and receive an account update after verification.</p></div><div class="card"><div class="feature-icon">↗</div><h3>Portfolio tracking</h3><p class="muted">See credited balance, portfolio value, ROI value, maturity dates and transaction history.</p></div><div class="card"><div class="feature-icon">⌁</div><h3>Support</h3><p class="muted">Send a message to the support team and keep your replies in one place.</p></div></div></section>
+<section class="section container"><div class="two"><div><div class="eyebrow">How it works</div><h2>Simple from start to finish.</h2><div class="steps"><div><b>01</b><span>Choose a plan and continue to Bitcoin payment.</span></div><div><b>02</b><span>Send the required amount and mark the payment as sent.</span></div><div><b>03</b><span>Email your payment screenshot to {{support_email}}.</span></div><div><b>04</b><span>After verification, your account balance and portfolio update.</span></div></div></div><div class="card faq"><h3>Questions</h3><details open><summary>How do I fund an investment?</summary><p class="muted">Select a plan, open Wallet, send the required Bitcoin amount to the displayed address and mark the payment as sent.</p></details><details><summary>When does my balance update?</summary><p class="muted">The balance updates after the payment has been verified and approved.</p></details><details><summary>How do I contact support?</summary><p class="muted">Use the Support page or email {{support_email}}.</p></details></div></div></section>
+</main><div id="toast-wrap"></div><script>
+function copyBTC(){navigator.clipboard.writeText({{btc_address|tojson}}).then(()=>toast('Bitcoin address copied.'))}
+function toast(msg){const w=document.getElementById('toast-wrap');const e=document.createElement('div');e.className='toast show';e.innerHTML='<div class="toasticon">✓</div><div><div class="toasttitle">Nova Investment</div><div class="toasttext">'+msg+'</div></div>';w.appendChild(e);setTimeout(()=>e.remove(),4200)}
+async function loadBTC(){try{const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true');const d=await r.json();const p=d.bitcoin.usd;document.getElementById('btc-price').textContent='$'+Number(p).toLocaleString('en-US',{maximumFractionDigits:2});document.getElementById('btc-change').textContent='24h: '+Number(d.bitcoin.usd_24h_change||0).toFixed(2)+'% · Live market data';}catch(e){document.getElementById('btc-change').textContent='Market data temporarily unavailable';document.getElementById('btc-dot').textContent='○'}}loadBTC();setInterval(loadBTC,60000);
+</script><footer class="footer"><div class="container">Nova Investment · Customer support: <a href="mailto:{{support_email}}">{{support_email}}</a></div></footer></body></html>
