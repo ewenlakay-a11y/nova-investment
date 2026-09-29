@@ -93,6 +93,19 @@ def ctx():
 def home():
     return render_template("home.html")
 
+
+@app.route("/activity-data")
+def activity_data():
+    c=db()
+    rows=c.execute("""SELECT users.name, investments.amount, investments.target, investments.created_at FROM investments JOIN users ON users.id=investments.user_id WHERE investments.status='active' ORDER BY investments.id DESC LIMIT 12""").fetchall()
+    c.close()
+    activities=[]
+    for r in rows:
+        name=(r['name'] or 'Customer').strip().split()[0]
+        masked=(name[:1]+"***") if name else "Customer"
+        activities.append({"label":f"{masked} has an approved {r['amount']:,.0f} investment · portfolio value ${r['target']:,.0f}"})
+    return jsonify({"activities":activities})
+
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method=="POST":
@@ -138,16 +151,22 @@ def logout():
 def dashboard():
     c=db(); uid=session["user_id"]
     inv=c.execute("SELECT * FROM investments WHERE user_id=? ORDER BY id DESC",(uid,)).fetchall()
-    tx=c.execute("SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC LIMIT 8",(uid,)).fetchall()
+    tx=c.execute("SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC LIMIT 12",(uid,)).fetchall()
     notifs=c.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 6",(uid,)).fetchall()
-    credited=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Bitcoin payment","Deposit"))
-    debited=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem"))
-    balance=max(0, credited-debited)
-    projected=sum(x["target"] for x in inv if x["status"]=="active")
-    roi_value=max(0,projected-balance)
-    roi_percent=(roi_value/balance*100) if balance else 0
+    today=datetime.now().date().isoformat()
+    active_inv=[x for x in inv if x["status"]=="active"]
+    locked_value=sum(x["target"] for x in active_inv if x["maturity"]>today)
+    matured_value=sum(x["target"] for x in active_inv if x["maturity"]<=today)
+    approved_deposits=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"]=="Deposit")
+    approved_withdrawals=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem"))
+    total_balance=max(0,locked_value+matured_value+approved_deposits-approved_withdrawals)
+    available_balance=max(0,matured_value+approved_deposits-approved_withdrawals)
+    principal=sum(x["amount"] for x in active_inv)
+    projected=sum(x["target"] for x in active_inv)
+    roi_value=max(0,projected-principal)
+    roi_percent=(roi_value/principal*100) if principal else 0
     c.close()
-    return render_template("dashboard.html",investments=inv,transactions=tx,notifications=notifs,total=balance,projected=projected,roi_value=roi_value,roi_percent=roi_percent)
+    return render_template("dashboard.html",investments=inv,transactions=tx,notifications=notifs,total=total_balance,available=available_balance,locked=locked_value,projected=projected,roi_value=roi_value,roi_percent=roi_percent)
 
 @app.route("/plans")
 def plans(): return render_template("plans.html")
@@ -183,18 +202,25 @@ def wallet():
         if amount<=0 or kind not in ("Deposit","Withdrawal","Redeem"):
             flash("Enter a valid amount.","error")
         else:
-            c=db()
-            c.execute("INSERT INTO transactions(user_id,kind,amount,status,note,created_at) VALUES(?,?,?,?,?,?)",
-                      (session["user_id"],kind,amount,"Pending","Request awaiting administrator review",datetime.now().isoformat()))
+            c=db(); c.execute("INSERT INTO transactions(user_id,kind,amount,status,note,created_at) VALUES(?,?,?,?,?,?)",
+                              (session["user_id"],kind,amount,"Pending","Request awaiting administrator review",datetime.now().isoformat()))
             c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",
                       (session["user_id"],f"{kind} request received",f"${amount:,.2f} {kind.lower()} request is pending review.",datetime.now().isoformat()))
             c.commit(); c.close(); flash(f"{kind} request submitted.","success")
         return redirect(url_for("wallet"))
-    c=db(); tx=c.execute("SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC",(session["user_id"],)).fetchall(); inv=c.execute("SELECT * FROM investments WHERE user_id=? AND status IN ('awaiting_payment','payment_submitted','active') ORDER BY id DESC",(session["user_id"],)).fetchall(); c.close()
-    credited=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Bitcoin payment","Deposit"))
-    debited=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem"))
-    balance=max(0,credited-debited)
-    return render_template("wallet.html",transactions=tx,investments=inv,balance=balance)
+    c=db(); uid=session["user_id"]
+    tx=c.execute("SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC",(uid,)).fetchall()
+    inv=c.execute("SELECT * FROM investments WHERE user_id=? AND status IN ('awaiting_payment','payment_submitted','active') ORDER BY id DESC",(uid,)).fetchall()
+    today=datetime.now().date().isoformat()
+    active_inv=[x for x in inv if x["status"]=="active"]
+    locked=sum(x["target"] for x in active_inv if x["maturity"]>today)
+    matured=sum(x["target"] for x in active_inv if x["maturity"]<=today)
+    deposits=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"]=="Deposit")
+    withdrawals=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem"))
+    total=max(0,locked+matured+deposits-withdrawals)
+    available=max(0,matured+deposits-withdrawals)
+    c.close()
+    return render_template("wallet.html",transactions=tx,investments=inv,balance=total,available=available,locked=locked)
 
 @app.route("/payment/<int:investment_id>",methods=["POST"])
 @login_required
@@ -211,6 +237,44 @@ def confirm_payment(investment_id):
     c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",
               (session["user_id"],"Payment submitted for verification","Your payment confirmation was received. Please email a screenshot of the payment to "+SUPPORT_EMAIL+". The account is credited only after payment verification." ,datetime.now().isoformat()))
     c.commit(); c.close(); flash("Payment marked as sent. Verification is pending.","success"); return redirect(url_for("wallet"))
+
+@app.route("/early-withdrawal/<int:investment_id>",methods=["POST"])
+@login_required
+def early_withdrawal(investment_id):
+    c=db(); uid=session["user_id"]
+    inv=c.execute("SELECT * FROM investments WHERE id=? AND user_id=?",(investment_id,uid)).fetchone()
+    if not inv:
+        c.close(); flash("Investment not found.","error"); return redirect(url_for("wallet"))
+    if inv["status"]!="active":
+        c.close(); flash("This investment is not available for early withdrawal.","error"); return redirect(url_for("wallet"))
+    if inv["maturity"]<=datetime.now().date().isoformat():
+        c.close(); flash("This investment has reached maturity and can be withdrawn through the normal withdrawal process.","success"); return redirect(url_for("wallet"))
+    existing=c.execute("SELECT 1 FROM transactions WHERE investment_id=? AND kind='Early Withdrawal' AND status='Pending'",(investment_id,)).fetchone()
+    if existing:
+        c.close(); flash("An early withdrawal request is already awaiting administrator review.","error"); return redirect(url_for("wallet"))
+    gross=float(inv["target"]); fee=gross*0.02; payout=gross-fee
+    c.execute("INSERT INTO transactions(user_id,kind,amount,status,note,created_at,investment_id) VALUES(?,?,?,?,?,?,?)",
+              (uid,"Early Withdrawal",payout,"Pending",f"Early withdrawal requested before maturity. Gross ${gross:,.2f}; 2% early withdrawal fee ${fee:,.2f}; net payout ${payout:,.2f}.",datetime.now().isoformat(),investment_id))
+    c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",
+              (uid,"Early withdrawal request received",f"Your request is under review. A 2% early withdrawal fee (${fee:,.2f}) applies; estimated net payout is ${payout:,.2f}. Please contact {SUPPORT_EMAIL} for assistance.",datetime.now().isoformat()))
+    c.commit(); c.close(); flash("Early withdrawal request sent to the administrator. The 2% fee has been included in the request.","success"); return redirect(url_for("wallet"))
+
+@app.route("/support/data")
+@login_required
+def support_data():
+    c=db()
+    rows=c.execute("SELECT id,message,reply,created_at FROM support WHERE user_id=? ORDER BY id DESC",(session["user_id"],)).fetchall()
+    c.close()
+    return jsonify({"messages":[dict(r) for r in rows]})
+
+@app.route("/admin/support-data")
+@admin_required
+def admin_support_data():
+    c=db()
+    rows=c.execute("""SELECT support.id,support.user_id,support.message,support.reply,support.created_at,users.name,users.email
+                     FROM support JOIN users ON users.id=support.user_id ORDER BY support.id DESC""").fetchall()
+    c.close()
+    return jsonify({"messages":[dict(r) for r in rows]})
 
 @app.route("/support",methods=["GET","POST"])
 @login_required
@@ -266,12 +330,23 @@ def admin_action():
             new_status="active" if action=="approve" else "rejected"
             c.execute("UPDATE investments SET status=? WHERE id=?",(new_status,rid))
             if action=="approve":
-                tx=c.execute("SELECT id FROM transactions WHERE investment_id=?",(inv["id"],)).fetchone()
-                if tx: c.execute("UPDATE transactions SET status='Approved', note=? WHERE id=?",("Bitcoin payment verified by administrator; investment credited.",tx["id"]))
-                c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",(inv["user_id"],"Payment verified","Your Bitcoin payment has been verified and the investment has been credited to your account.",datetime.now().isoformat()))
+                tx=c.execute("SELECT id FROM transactions WHERE investment_id=? AND kind='Bitcoin payment'",(inv["id"],)).fetchone()
+                if tx: c.execute("UPDATE transactions SET status='Approved', note=? WHERE id=?",("Bitcoin payment verified by administrator; investment credited at the plan value shown in the account.",tx["id"]))
+                c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",(inv["user_id"],"Investment credited",f"Your {inv['plan']} investment was approved. ${inv['target']:,.2f} has been added to your portfolio balance and remains locked until {inv['maturity']} unless an early withdrawal request is approved.",datetime.now().isoformat()))
             else:
                 c.execute("UPDATE transactions SET status='Rejected', note=? WHERE investment_id=? AND status IN ('Pending Verification','Awaiting Payment')",("Payment could not be verified.",inv["id"]))
                 c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",(inv["user_id"],"Payment review update","The submitted payment could not be verified. Please contact support if you believe this is an error.",datetime.now().isoformat()))
+    elif typ=="early_withdrawal":
+        tx=c.execute("SELECT * FROM transactions WHERE id=? AND kind='Early Withdrawal'",(rid,)).fetchone()
+        if tx:
+            inv=c.execute("SELECT * FROM investments WHERE id=?",(tx["investment_id"],)).fetchone() if tx["investment_id"] else None
+            if action=="approve" and inv:
+                c.execute("UPDATE transactions SET status='Approved' WHERE id=?",(tx["id"],))
+                c.execute("UPDATE investments SET status='withdrawn' WHERE id=?",(inv["id"],))
+                c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",(tx["user_id"],"Early withdrawal approved",f"Your early withdrawal was approved. The 2% fee was applied and the net payout is ${tx['amount']:,.2f}.",datetime.now().isoformat()))
+            elif action=="reject":
+                c.execute("UPDATE transactions SET status='Rejected' WHERE id=?",(tx["id"],))
+                c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",(tx["user_id"],"Early withdrawal update","Your early withdrawal request was not approved. Please contact support for more information.",datetime.now().isoformat()))
     elif typ=="transaction":
         tx=c.execute("SELECT * FROM transactions WHERE id=?",(rid,)).fetchone()
         if tx:
