@@ -12,11 +12,21 @@ BTC_ADDRESS = "bc1qwe7l499zq0y2l7x59lvnwlft02v0dhzh34q5jy"
 SUPPORT_EMAIL = "novainvestment965@gmail.com"
 
 PLANS = [
-    {"id":"starter","name":"Starter","amount":500,"target":3500,"months":12},
-    {"id":"standard","name":"Standard","amount":1000,"target":5500,"months":12},
-    {"id":"premium","name":"Premium","amount":5000,"target":10500,"months":12},
-    {"id":"elite","name":"Elite","amount":10000,"target":30000,"months":12},
+    {"id":"starter","name":"Starter","amount":500,"roi":40,"months":12},
+    {"id":"standard","name":"Standard","amount":1000,"roi":40,"months":12},
+    {"id":"growth","name":"Growth","amount":3000,"roi":45,"months":12},
+    {"id":"plus","name":"Plus","amount":5000,"roi":45,"months":12},
+    {"id":"pro","name":"Pro","amount":10000,"roi":50,"months":12},
+    {"id":"elite","name":"Elite","amount":20000,"roi":55,"months":12},
 ]
+
+# These are user-facing plan projections, not guaranteed investment returns.
+for _p in PLANS:
+    _p["roi_amount"] = _p["amount"] * (_p["roi"] / 100)
+    _p["annual_contribution"] = _p["amount"]
+    _p["annual_profit"] = _p["roi_amount"]
+    _p["annual_total"] = _p["amount"] + _p["roi_amount"]
+    _p["target"] = _p["annual_total"]
 
 def db():
     c=sqlite3.connect(DB)
@@ -57,6 +67,9 @@ def init_db():
     invcols=[r[1] for r in c.execute("PRAGMA table_info(investments)").fetchall()]
     if "payment_submitted_at" not in invcols:
         c.execute("ALTER TABLE investments ADD COLUMN payment_submitted_at TEXT")
+    for col,typ in [("monthly_profit","REAL"),("annual_profit","REAL"),("annual_total","REAL"),("roi","REAL"),("roi_amount","REAL")]:
+        if col not in invcols:
+            c.execute(f"ALTER TABLE investments ADD COLUMN {col} {typ}")
     # Demo/admin accounts for assessment
     if not c.execute("SELECT 1 FROM users WHERE email=?",("demo@novainvestment.local",)).fetchone():
         c.execute("INSERT INTO users(name,email,password,is_admin,created_at) VALUES(?,?,?,?,?)",
@@ -117,6 +130,8 @@ def register():
             return redirect(url_for("register"))
         c=db()
         try:
+            if c.execute("SELECT 1 FROM users WHERE lower(email)=lower(?)",(email,)).fetchone():
+                c.close(); flash("That email already has an account. Please use a different email or log in.","error"); return redirect(url_for("register"))
             cur=c.execute("INSERT INTO users(name,email,password,created_at) VALUES(?,?,?,?)",
                           (name,email,password,datetime.now().isoformat()))
             uid=cur.lastrowid
@@ -158,7 +173,7 @@ def dashboard():
     locked_value=sum(x["target"] for x in active_inv if x["maturity"]>today)
     matured_value=sum(x["target"] for x in active_inv if x["maturity"]<=today)
     approved_deposits=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"]=="Deposit")
-    approved_withdrawals=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem"))
+    approved_withdrawals=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem","Early Withdrawal"))
     total_balance=max(0,locked_value+matured_value+approved_deposits-approved_withdrawals)
     available_balance=max(0,matured_value+approved_deposits-approved_withdrawals)
     principal=sum(x["amount"] for x in active_inv)
@@ -179,8 +194,8 @@ def invest(plan_id):
     if request.method=="POST":
         maturity=(datetime.now()+timedelta(days=p["months"]*30)).date().isoformat()
         c=db()
-        cur=c.execute("INSERT INTO investments(user_id,plan,amount,target,status,maturity,created_at) VALUES(?,?,?,?,?,?,?)",
-                       (session["user_id"],p["name"],p["amount"],p["target"],"awaiting_payment",maturity,datetime.now().isoformat()))
+        cur=c.execute("INSERT INTO investments(user_id,plan,amount,target,status,maturity,created_at,monthly_profit,annual_profit,annual_total,roi,roi_amount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                       (session["user_id"],p["name"],p["amount"],p["annual_total"],"awaiting_payment",maturity,datetime.now().isoformat(),p["roi_amount"],p["roi_amount"],p["annual_total"],p["roi"],p["roi_amount"]))
         inv_id=cur.lastrowid
         c.execute("INSERT INTO transactions(user_id,kind,amount,status,note,created_at,investment_id) VALUES(?,?,?,?,?,?,?)",
                   (session["user_id"],"Bitcoin payment",p["amount"],"Awaiting Payment","Investment payment awaiting customer confirmation",datetime.now().isoformat(),inv_id))
@@ -188,7 +203,7 @@ def invest(plan_id):
                   (session["user_id"],"Payment instructions ready",f"Send ${p['amount']:,.0f} in Bitcoin, then use the payment confirmation button in Wallet.",datetime.now().isoformat()))
         c.commit(); c.close()
         return redirect(url_for("wallet"))
-    roi=(p["target"]-p["amount"])/p["amount"]*100
+    roi=p["roi"]
     return render_template("invest.html",plan=p,roi=roi)
 
 @app.route("/wallet",methods=["GET","POST"])
@@ -202,7 +217,17 @@ def wallet():
         if amount<=0 or kind not in ("Deposit","Withdrawal","Redeem"):
             flash("Enter a valid amount.","error")
         else:
-            c=db(); c.execute("INSERT INTO transactions(user_id,kind,amount,status,note,created_at) VALUES(?,?,?,?,?,?)",
+            c=db()
+            if kind in ("Withdrawal","Redeem"):
+                uid=session["user_id"]; today=datetime.now().date().isoformat()
+                active=c.execute("SELECT * FROM investments WHERE user_id=? AND status='active'",(uid,)).fetchall()
+                matured=sum(float(x["target"]) for x in active if x["maturity"]<=today)
+                approved_deposits=sum(float(x["amount"]) for x in c.execute("SELECT amount FROM transactions WHERE user_id=? AND status='Approved' AND kind='Deposit'",(uid,)).fetchall())
+                approved_withdrawals=sum(float(x["amount"]) for x in c.execute("SELECT amount FROM transactions WHERE user_id=? AND status='Approved' AND kind IN ('Withdrawal','Redeem','Early Withdrawal')",(uid,)).fetchall())
+                available_now=max(0,matured+approved_deposits-approved_withdrawals)
+                if amount>available_now:
+                    c.close(); flash(f"Only ${available_now:,.2f} is currently available to withdraw. Locked investments cannot be withdrawn before maturity except through an approved early-withdrawal request.","error"); return redirect(url_for("wallet"))
+            c.execute("INSERT INTO transactions(user_id,kind,amount,status,note,created_at) VALUES(?,?,?,?,?,?)",
                               (session["user_id"],kind,amount,"Pending","Request awaiting administrator review",datetime.now().isoformat()))
             c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",
                       (session["user_id"],f"{kind} request received",f"${amount:,.2f} {kind.lower()} request is pending review.",datetime.now().isoformat()))
@@ -216,11 +241,12 @@ def wallet():
     locked=sum(x["target"] for x in active_inv if x["maturity"]>today)
     matured=sum(x["target"] for x in active_inv if x["maturity"]<=today)
     deposits=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"]=="Deposit")
-    withdrawals=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem"))
+    withdrawals=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem","Early Withdrawal"))
     total=max(0,locked+matured+deposits-withdrawals)
     available=max(0,matured+deposits-withdrawals)
+    roi_amount=sum(float(x["roi_amount"] or x["annual_profit"] or 0) for x in active_inv)
     c.close()
-    return render_template("wallet.html",transactions=tx,investments=inv,balance=total,available=available,locked=locked)
+    return render_template("wallet.html",transactions=tx,investments=inv,balance=total,available=available,locked=locked,roi_amount=roi_amount,nowdate=datetime.now().date().isoformat())
 
 @app.route("/payment/<int:investment_id>",methods=["POST"])
 @login_required
