@@ -42,3 +42,7 @@ Demo 2FA code: 246810
 The supplied investment figures are displayed as illustrative project scenarios, not guaranteed returns. The application does not connect to banks, exchanges, custody systems, or move real money. The Bitcoin address is displayed as the payment-method requirement supplied for the project; real-money deployment would require appropriate legal, regulatory, KYC/AML, custody and payment infrastructure.
 
 The BTC notification attempts to read a public CoinGecko BTC/USD endpoint in the visitor's browser. If unavailable, it reports that market data is unavailable rather than inventing a price or fabricating current investors.
+
+
+## Monthly and 12-month ROI projections
+The listed ROI percentage is displayed as an illustrative monthly rate applied to the original principal using simple interest (no compounding). The 12-month projected profit is monthly projected profit multiplied by 12; projected total at maturity is principal plus projected profit. These are projections, not guaranteed returns. Before maturity, the locked balance includes only original principal, and early withdrawal calculations exclude unearned projected profit.
