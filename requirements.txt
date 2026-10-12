@@ -1,2 +1,3 @@
 Flask>=3.0,<4
 Gunicorn>=21,<24
+Flask-WTF>=1.2,<2
