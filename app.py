@@ -22,10 +22,13 @@ PLANS = [
 
 # These are user-facing plan projections, not guaranteed investment returns.
 for _p in PLANS:
-    _p["roi_amount"] = _p["amount"] * (_p["roi"] / 100)
+    # ROI is the projected profit rate per month, applied to original principal.
+    # Simple-interest illustration only; these figures are not guaranteed returns.
+    _p["monthly_profit"] = _p["amount"] * (_p["roi"] / 100)
+    _p["roi_amount"] = _p["monthly_profit"] * _p["months"]
     _p["annual_contribution"] = _p["amount"]
     _p["annual_profit"] = _p["roi_amount"]
-    _p["annual_total"] = _p["amount"] + _p["roi_amount"]
+    _p["annual_total"] = _p["amount"] + _p["annual_profit"]
     _p["target"] = _p["annual_total"]
 
 def db():
@@ -70,6 +73,15 @@ def init_db():
     for col,typ in [("monthly_profit","REAL"),("annual_profit","REAL"),("annual_total","REAL"),("roi","REAL"),("roi_amount","REAL")]:
         if col not in invcols:
             c.execute(f"ALTER TABLE investments ADD COLUMN {col} {typ}")
+    # Refresh the projection fields for existing investments as well as new ones.
+    # This changes displayed projections; it does not create a payment or transaction.
+    c.execute("""UPDATE investments SET
+        monthly_profit=amount*(COALESCE(roi,0)/100.0),
+        annual_profit=amount*(COALESCE(roi,0)/100.0)*12,
+        annual_total=amount+(amount*(COALESCE(roi,0)/100.0)*12),
+        roi_amount=amount*(COALESCE(roi,0)/100.0)*12,
+        target=amount+(amount*(COALESCE(roi,0)/100.0)*12)
+        WHERE roi IS NOT NULL AND roi > 0""")
     # Demo/admin accounts for assessment
     if not c.execute("SELECT 1 FROM users WHERE email=?",("demo@novainvestment.local",)).fetchone():
         c.execute("INSERT INTO users(name,email,password,is_admin,created_at) VALUES(?,?,?,?,?)",
@@ -110,13 +122,13 @@ def home():
 @app.route("/activity-data")
 def activity_data():
     c=db()
-    rows=c.execute("""SELECT users.name, investments.amount, investments.target, investments.created_at FROM investments JOIN users ON users.id=investments.user_id WHERE investments.status='active' ORDER BY investments.id DESC LIMIT 12""").fetchall()
+    rows=c.execute("""SELECT users.name, investments.amount, investments.created_at FROM investments JOIN users ON users.id=investments.user_id WHERE investments.status='active' ORDER BY investments.id DESC LIMIT 12""").fetchall()
     c.close()
     activities=[]
     for r in rows:
         name=(r['name'] or 'Customer').strip().split()[0]
         masked=(name[:1]+"***") if name else "Customer"
-        activities.append({"label":f"{masked} has an approved {r['amount']:,.0f} investment · portfolio value ${r['target']:,.0f}"})
+        activities.append({"label":f"{masked} has an approved ${r['amount']:,.0f} investment"})
     return jsonify({"activities":activities})
 
 @app.route("/register", methods=["GET","POST"])
@@ -170,18 +182,20 @@ def dashboard():
     notifs=c.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 6",(uid,)).fetchall()
     today=datetime.now().date().isoformat()
     active_inv=[x for x in inv if x["status"]=="active"]
-    locked_value=sum(x["target"] for x in active_inv if x["maturity"]>today)
+    # Before maturity, only principal is included in the locked balance.
+    # The 12-month profit remains a separate projection until maturity.
+    locked_value=sum(x["amount"] for x in active_inv if x["maturity"]>today)
     matured_value=sum(x["target"] for x in active_inv if x["maturity"]<=today)
     approved_deposits=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"]=="Deposit")
-    approved_withdrawals=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem","Early Withdrawal"))
+    approved_withdrawals=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem"))
     total_balance=max(0,locked_value+matured_value+approved_deposits-approved_withdrawals)
     available_balance=max(0,matured_value+approved_deposits-approved_withdrawals)
     principal=sum(x["amount"] for x in active_inv)
-    projected=sum(x["target"] for x in active_inv)
-    roi_value=max(0,projected-principal)
+    roi_value=sum(float(x["annual_profit"] or x["roi_amount"] or 0) for x in active_inv)
+    projected=total_balance+sum(float(x["annual_profit"] or x["roi_amount"] or 0) for x in active_inv if x["maturity"]>today)
     roi_percent=(roi_value/principal*100) if principal else 0
     c.close()
-    return render_template("dashboard.html",investments=inv,transactions=tx,notifications=notifs,total=total_balance,available=available_balance,locked=locked_value,projected=projected,roi_value=roi_value,roi_percent=roi_percent)
+    return render_template("dashboard.html",investments=inv,transactions=tx,notifications=notifs,total=total_balance,available=available_balance,locked=locked_value,projected=projected,roi_value=roi_value,roi_amount=roi_value,roi_percent=roi_percent)
 
 @app.route("/plans")
 def plans(): return render_template("plans.html")
@@ -195,7 +209,7 @@ def invest(plan_id):
         maturity=(datetime.now()+timedelta(days=p["months"]*30)).date().isoformat()
         c=db()
         cur=c.execute("INSERT INTO investments(user_id,plan,amount,target,status,maturity,created_at,monthly_profit,annual_profit,annual_total,roi,roi_amount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                       (session["user_id"],p["name"],p["amount"],p["annual_total"],"awaiting_payment",maturity,datetime.now().isoformat(),p["roi_amount"],p["roi_amount"],p["annual_total"],p["roi"],p["roi_amount"]))
+                       (session["user_id"],p["name"],p["amount"],p["annual_total"],"awaiting_payment",maturity,datetime.now().isoformat(),p["monthly_profit"],p["annual_profit"],p["annual_total"],p["roi"],p["annual_profit"]))
         inv_id=cur.lastrowid
         c.execute("INSERT INTO transactions(user_id,kind,amount,status,note,created_at,investment_id) VALUES(?,?,?,?,?,?,?)",
                   (session["user_id"],"Bitcoin payment",p["amount"],"Awaiting Payment","Investment payment awaiting customer confirmation",datetime.now().isoformat(),inv_id))
@@ -223,7 +237,7 @@ def wallet():
                 active=c.execute("SELECT * FROM investments WHERE user_id=? AND status='active'",(uid,)).fetchall()
                 matured=sum(float(x["target"]) for x in active if x["maturity"]<=today)
                 approved_deposits=sum(float(x["amount"]) for x in c.execute("SELECT amount FROM transactions WHERE user_id=? AND status='Approved' AND kind='Deposit'",(uid,)).fetchall())
-                approved_withdrawals=sum(float(x["amount"]) for x in c.execute("SELECT amount FROM transactions WHERE user_id=? AND status='Approved' AND kind IN ('Withdrawal','Redeem','Early Withdrawal')",(uid,)).fetchall())
+                approved_withdrawals=sum(float(x["amount"]) for x in c.execute("SELECT amount FROM transactions WHERE user_id=? AND status='Approved' AND kind IN ('Withdrawal','Redeem')",(uid,)).fetchall())
                 available_now=max(0,matured+approved_deposits-approved_withdrawals)
                 if amount>available_now:
                     c.close(); flash(f"Only ${available_now:,.2f} is currently available to withdraw. Locked investments cannot be withdrawn before maturity except through an approved early-withdrawal request.","error"); return redirect(url_for("wallet"))
@@ -238,13 +252,13 @@ def wallet():
     inv=c.execute("SELECT * FROM investments WHERE user_id=? AND status IN ('awaiting_payment','payment_submitted','active') ORDER BY id DESC",(uid,)).fetchall()
     today=datetime.now().date().isoformat()
     active_inv=[x for x in inv if x["status"]=="active"]
-    locked=sum(x["target"] for x in active_inv if x["maturity"]>today)
+    locked=sum(x["amount"] for x in active_inv if x["maturity"]>today)
     matured=sum(x["target"] for x in active_inv if x["maturity"]<=today)
     deposits=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"]=="Deposit")
-    withdrawals=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem","Early Withdrawal"))
+    withdrawals=sum(x["amount"] for x in tx if x["status"]=="Approved" and x["kind"] in ("Withdrawal","Redeem"))
     total=max(0,locked+matured+deposits-withdrawals)
     available=max(0,matured+deposits-withdrawals)
-    roi_amount=sum(float(x["roi_amount"] or x["annual_profit"] or 0) for x in active_inv)
+    roi_amount=sum(float(x["annual_profit"] or x["roi_amount"] or 0) for x in active_inv)
     c.close()
     return render_template("wallet.html",transactions=tx,investments=inv,balance=total,available=available,locked=locked,roi_amount=roi_amount,nowdate=datetime.now().date().isoformat())
 
@@ -278,11 +292,12 @@ def early_withdrawal(investment_id):
     existing=c.execute("SELECT 1 FROM transactions WHERE investment_id=? AND kind='Early Withdrawal' AND status='Pending'",(investment_id,)).fetchone()
     if existing:
         c.close(); flash("An early withdrawal request is already awaiting administrator review.","error"); return redirect(url_for("wallet"))
-    gross=float(inv["target"]); fee=gross*0.02; payout=gross-fee
+    # Early withdrawal excludes unearned projected profit; fee is applied to principal only.
+    gross=float(inv["amount"]); fee=gross*0.02; payout=gross-fee
     c.execute("INSERT INTO transactions(user_id,kind,amount,status,note,created_at,investment_id) VALUES(?,?,?,?,?,?,?)",
-              (uid,"Early Withdrawal",payout,"Pending",f"Early withdrawal requested before maturity. Gross ${gross:,.2f}; 2% early withdrawal fee ${fee:,.2f}; net payout ${payout:,.2f}.",datetime.now().isoformat(),investment_id))
+              (uid,"Early Withdrawal",payout,"Pending",f"Early withdrawal requested before maturity. Principal-only gross ${gross:,.2f}; 2% fee ${fee:,.2f}; estimated net payout ${payout:,.2f}. Unmatured projected profit is excluded.",datetime.now().isoformat(),investment_id))
     c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",
-              (uid,"Early withdrawal request received",f"Your request is under review. A 2% early withdrawal fee (${fee:,.2f}) applies; estimated net payout is ${payout:,.2f}. Please contact {SUPPORT_EMAIL} for assistance.",datetime.now().isoformat()))
+              (uid,"Early withdrawal request received",f"Your request is under review. A 2% fee (${fee:,.2f}) applies to principal only; estimated net payout is ${payout:,.2f}. Unmatured projected profit is excluded. Please contact {SUPPORT_EMAIL} for assistance.",datetime.now().isoformat()))
     c.commit(); c.close(); flash("Early withdrawal request sent to the administrator. The 2% fee has been included in the request.","success"); return redirect(url_for("wallet"))
 
 @app.route("/support/data")
@@ -357,8 +372,8 @@ def admin_action():
             c.execute("UPDATE investments SET status=? WHERE id=?",(new_status,rid))
             if action=="approve":
                 tx=c.execute("SELECT id FROM transactions WHERE investment_id=? AND kind='Bitcoin payment'",(inv["id"],)).fetchone()
-                if tx: c.execute("UPDATE transactions SET status='Approved', note=? WHERE id=?",("Bitcoin payment verified by administrator; investment credited at the plan value shown in the account.",tx["id"]))
-                c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",(inv["user_id"],"Investment credited",f"Your {inv['plan']} investment was approved. ${inv['target']:,.2f} has been added to your portfolio balance and remains locked until {inv['maturity']} unless an early withdrawal request is approved.",datetime.now().isoformat()))
+                if tx: c.execute("UPDATE transactions SET status='Approved', note=? WHERE id=?",("Bitcoin payment verified by administrator; original principal is credited and locked. Projected profit is not a guaranteed payment.",tx["id"]))
+                c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",(inv["user_id"],"Investment approved",f"Your {inv['plan']} investment was approved. Principal ${inv['amount']:,.2f} is locked until {inv['maturity']}. The 12-month projected profit is ${float(inv['annual_profit'] or inv['roi_amount'] or 0):,.2f}; it is a projection, not a guaranteed return, and is not included in your available balance before maturity.",datetime.now().isoformat()))
             else:
                 c.execute("UPDATE transactions SET status='Rejected', note=? WHERE investment_id=? AND status IN ('Pending Verification','Awaiting Payment')",("Payment could not be verified.",inv["id"]))
                 c.execute("INSERT INTO notifications(user_id,title,message,created_at) VALUES(?,?,?,?)",(inv["user_id"],"Payment review update","The submitted payment could not be verified. Please contact support if you believe this is an error.",datetime.now().isoformat()))
