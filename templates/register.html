@@ -1,4 +1,6 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Register | Nova Investment</title><link rel="stylesheet" href="/static/style.css"></head><body><nav class="nav"><div class="container" style="display:flex;width:92%;align-items:center;justify-content:space-between">
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Register | Nova Investment</title><link rel="stylesheet" href="/static/style.css"></head><body>
+<div class="market-ticker" aria-live="polite"><div><span class="market-label">BTC</span><strong id="corner-btc">Loading…</strong></div><div><span class="market-label">USDT</span><strong id="corner-usdt">Loading…</strong></div></div>
+<div id="activity-popup" class="activity-popup" aria-live="polite" aria-atomic="true"><div class="activity-icon">✓</div><div><div class="activity-title">Recent platform activity</div><div id="activity-text">Checking recent activity…</div></div><button type="button" class="activity-close" onclick="document.getElementById('activity-popup').classList.remove('show')" aria-label="Close">×</button></div><nav class="nav"><div class="container" style="display:flex;width:92%;align-items:center;justify-content:space-between">
       <a class="brand" href="/">Nova <span>Investment</span></a>
       <div class="navlinks">
         <a href="/">Home</a><a href="/plans">Plans</a>
@@ -6,7 +8,7 @@
         {% else %}<a href="/login">Login</a><a class="btn" href="/register">Create account</a>{% endif %}
       </div>
       <a class="navmobile btn secondary" href="/login">Account</a>
-    </div></nav>{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="container"><div class="flash {{cat}}">{{msg}}</div></div>{% endfor %}{% endwith %}<main class="container"><div class="card formbox"><div class="eyebrow">New account</div><h2>Create your account</h2><form method="post"><div class="field"><label>Full name</label><input name="name" required></div><div class="field"><label>Email</label><input type="email" name="email" required></div><div class="field"><label>Password</label><input type="password" name="password" minlength="6" required></div><button class="btn" style="width:100%">Create account</button></form></div></main>
+    </div></nav>{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="container"><div class="flash {{cat}}">{{msg}}</div></div>{% endfor %}{% endwith %}<main class="container"><div class="card formbox"><div class="eyebrow">New account</div><h2>Create your account</h2><form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="field"><label>Full name</label><input name="name" required></div><div class="field"><label>Email</label><input type="email" name="email" required></div><div class="field"><label>Password</label><input type="password" name="password" minlength="6" required></div><button class="btn" style="width:100%">Create account</button></form></div></main>
 <div id="toast-wrap"></div>
 <style>
 #toast-wrap{position:fixed;right:18px;bottom:18px;width:min(390px,calc(100vw - 28px));z-index:9999}
@@ -40,4 +42,8 @@
  let i=0; function next(){show(items[i++%items.length]);setTimeout(next,9000)} setTimeout(next,1800);
 })();
 </script>
-<footer class="footer"><div class="container">Nova Investment · Customer support: <a href="mailto:novainvestment965@gmail.com">novainvestment965@gmail.com</a></div></footer></body></html>
+<footer class="footer"><div class="container">Nova Investment · Customer support: <a href="mailto:novainvestment965@gmail.com">novainvestment965@gmail.com</a></div></footer><script>
+async function loadMarketCorner(){try{const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,tether&vs_currencies=usd');const d=await r.json();if(d.bitcoin?.usd)document.getElementById('corner-btc').textContent='$'+Number(d.bitcoin.usd).toLocaleString('en-US',{maximumFractionDigits:2});if(d.tether?.usd)document.getElementById('corner-usdt').textContent='$'+Number(d.tether.usd).toFixed(4);}catch(e){document.getElementById('corner-btc').textContent='Unavailable';document.getElementById('corner-usdt').textContent='Unavailable';}}
+async function loadActivity(){try{const r=await fetch('/activity-data');const d=await r.json();const el=document.getElementById('activity-text');if(!d.activities||!d.activities.length){el.textContent='No recent approved investment activity yet.';return;}const a=d.activities[Math.floor(Math.random()*d.activities.length)];el.textContent=a.label;document.getElementById('activity-popup').classList.add('show');}catch(e){document.getElementById('activity-text').textContent='No recent activity available.';}}
+loadMarketCorner();setInterval(loadMarketCorner,60000);loadActivity();setInterval(loadActivity,30000);
+</script></body></html>

@@ -1,43 +1,5 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Plans | Nova Investment</title><link rel="stylesheet" href="/static/style.css"></head><body><nav class="nav"><div class="container" style="display:flex;width:92%;align-items:center;justify-content:space-between">
-      <a class="brand" href="/">Nova <span>Investment</span></a>
-      <div class="navlinks">
-        <a href="/">Home</a><a href="/plans">Plans</a>
-        {% if current_user %}<a href="/dashboard">Dashboard</a><a href="/wallet">Wallet</a><a href="/support">Support</a>{% if current_user["is_admin"] %}<a href="/admin">Admin</a>{% endif %}<a href="/logout">Logout</a>
-        {% else %}<a href="/login">Login</a><a class="btn" href="/register">Create account</a>{% endif %}
-      </div>
-      <a class="navmobile btn secondary" href="/login">Account</a>
-    </div></nav>{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="container"><div class="flash {{cat}}">{{msg}}</div></div>{% endfor %}{% endwith %}<main class="section container"><div class="toprow"><div><div class="eyebrow">Plans</div><h2>Investment plans</h2><p class="muted">Review the amount, projected value and maturity period for each available plan.</p></div></div><div class="grid">{% for p in plans %}<div class="card plan"><span class="tag">{{p.name}}</span><h3>${{"{:,.0f}".format(p.amount)}} monthly</h3><div class="price">${{"{:,.0f}".format(p.target)}}</div><div class="target">Projected value</div><p class="muted">Maturity: {{p.months}} months</p><a class="btn" href="/invest/{{p.id}}">Select plan</a></div>{% endfor %}</div></main>
-<div id="toast-wrap"></div>
-<style>
-#toast-wrap{position:fixed;right:18px;bottom:18px;width:min(390px,calc(100vw - 28px));z-index:9999}
-.toast{background:rgba(7,17,31,.97);border:1px solid rgba(255,255,255,.13);box-shadow:0 20px 60px rgba(0,0,0,.4);border-radius:17px;padding:15px;display:grid;grid-template-columns:40px 1fr 20px;gap:11px;margin-top:10px;transform:translateY(20px);opacity:0;transition:.35s}
-.toast.show{transform:translateY(0);opacity:1}.toasticon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:rgba(94,234,212,.1);color:#5eead4;font-weight:900}.toasttitle{font-weight:850;font-size:13px}.toasttext{color:#9fb0c5;font-size:12px;line-height:1.5;margin-top:3px}.toastclose{border:0;background:none;color:#9fb0c5;cursor:pointer;font-size:18px}
-</style>
-<script>
-(function(){
- const wrap=document.getElementById('toast-wrap'); if(!wrap)return;
- const items=[
-  ['₿','Bitcoin market update','Fetching the latest BTC/USD market price…',true],
-  ['↗','Plan update','Investment plans are available to review from $500.',false],
-  ['✓','Account update','Portfolio and transaction information is available in your dashboard.',false],
-  ['🔒','Security update','Use your verification settings to keep your account protected.',false]
- ];
- async function btc(){
-  try{
-   const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
-   const d=await r.json(); const p=d.bitcoin.usd;
-   return 'BTC/USD: $'+Number(p).toLocaleString('en-US',{maximumFractionDigits:2});
-  }catch(e){return 'BTC/USD market data is temporarily unavailable.'}
- }
- async function show(x){
-  const el=document.createElement('div'); el.className='toast';
-  let t=x[2]; if(x[3])t=await btc();
-  el.innerHTML='<div class="toasticon">'+x[0]+'</div><div><div class="toasttitle">'+x[1]+'</div><div class="toasttext">'+t+'</div></div><button class="toastclose">×</button>';
-  wrap.appendChild(el); requestAnimationFrame(()=>el.classList.add('show'));
-  const close=()=>{el.classList.remove('show');setTimeout(()=>el.remove(),350)};
-  el.querySelector('.toastclose').onclick=close; setTimeout(close,6500);
- }
- let i=0; function next(){show(items[i++%items.length]);setTimeout(next,9000)} setTimeout(next,1800);
-})();
-</script>
-<footer class="footer"><div class="container">Nova Investment · Customer support: <a href="mailto:novainvestment965@gmail.com">novainvestment965@gmail.com</a></div></footer></body></html>
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Plans | Nova Investment</title><link rel="stylesheet" href="/static/style.css"></head><body>
+<div class="market-ticker"><div><span class="market-label">BTC</span><strong id="corner-btc">Loading…</strong></div><div><span class="market-label">USDT</span><strong id="corner-usdt">Loading…</strong></div></div><div id="activity-popup" class="activity-popup"><div class="activity-icon">✓</div><div><div class="activity-title">Recent platform activity</div><div id="activity-text">Checking recent activity…</div></div><button type="button" class="activity-close" onclick="this.parentElement.classList.remove('show')">×</button></div>
+<nav class="nav"><div class="container navinner"><a class="brand" href="/">Nova <span>Investment</span></a><div class="navlinks"><a href="/">Home</a><a href="/plans">Plans</a>{% if current_user %}<a href="/dashboard">Dashboard</a><a href="/wallet">Wallet</a><a href="/support">Support</a>{% if current_user["is_admin"] %}<a href="/admin">Admin</a>{% endif %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a><a class="btn" href="/register">Create account</a>{% endif %}</div><a class="navmobile btn secondary" href="/login">Account</a></div></nav>
+<main class="section container"><div class="toprow"><div><div class="eyebrow">Plans</div><h2>Investment plans</h2><p class="muted">All plans have a 6-month maturity and a requested 50% monthly ROI projection calculated on the full plan amount. Figures are illustrative, exceptionally high, and are not guaranteed returns.</p></div></div><div class="grid">{% for p in plans %}<div class="card plan"><span class="tag">{{p.name}}</span><h3>${{"{:,.0f}".format(p.amount)}} investment</h3><div class="price">{{p.roi}}% projected monthly ROI</div><div class="target">Monthly projected profit: ${{"{:,.0f}".format(p.monthly_profit)}}</div><div class="plan-details"><p><b>Investment amount</b><br>${{"{:,.0f}".format(p.amount)}}</p><p><b>Projected profit per month</b><br>${{"{:,.0f}".format(p.monthly_profit)}}</p><p><b>Projected profit over 12 months</b><br>${{"{:,.0f}".format(p.annual_profit)}}</p><p><b>Projected total at 6-month maturity</b><br>${{"{:,.0f}".format(p.annual_total)}}</p><p><b>Initial installment</b><br>${{"{:,.0f}".format(p.initial_payment)}}</p><div class="notice" style="margin-top:12px"><b>Missed installment:</b> A 5-day grace period applies after the due date. After that, a penalty of 10% of the overdue installment may apply.</div></div><p class="muted">Term: {{p.months}} months · simple-interest illustration</p><a class="btn" href="/invest/{{p.id}}">Select plan</a></div>{% endfor %}</div></main>
+<a class="support-float" href="/support" aria-label="Open Customer Care">💬 <span>Customer Care</span></a><footer class="footer"><div class="container">Nova Investment · Customer support: <a href="mailto:{{support_email}}">{{support_email}}</a></div></footer><script>async function market(){try{let r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,tether&vs_currencies=usd');let d=await r.json();document.getElementById('corner-btc').textContent=d.bitcoin?.usd?'$'+Number(d.bitcoin.usd).toLocaleString('en-US',{maximumFractionDigits:2}):'Unavailable';document.getElementById('corner-usdt').textContent=d.tether?.usd?'$'+Number(d.tether.usd).toFixed(4):'Unavailable'}catch(e){}}async function activity(){try{let r=await fetch('/activity-data');let d=await r.json();if(d.activities?.length){let a=d.activities[Math.floor(Math.random()*d.activities.length)];document.getElementById('activity-text').textContent=a.label;document.getElementById('activity-popup').classList.add('show')}}catch(e){}}market();activity();setInterval(market,60000);setInterval(activity,30000)</script></body></html>
