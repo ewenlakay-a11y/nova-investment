@@ -326,7 +326,8 @@ def dashboard():
     return render_template("dashboard.html",investments=inv,transactions=tx,notifications=notifs,total=total_balance,available=available_balance,locked=locked_value,projected=projected,roi_value=roi_value,roi_percent=roi_percent)
 
 @app.route("/plans")
-def plans(): return render_template("plans.html")
+def plans():
+    return render_template("plans.html", plans=PLANS)
 
 @app.route("/invest/<plan_id>", methods=["GET","POST"])
 @login_required
