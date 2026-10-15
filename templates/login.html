@@ -5,10 +5,10 @@
       <div class="navlinks">
         <a href="/">Home</a><a href="/plans">Plans</a>
         {% if current_user %}<a href="/dashboard">Dashboard</a><a href="/wallet">Wallet</a><a href="/support">Support</a>{% if current_user["is_admin"] %}<a href="/admin">Admin</a>{% endif %}<a href="/logout">Logout</a>
-        {% else %}<a href="/login">Login</a><a class="btn" href="/register">Create account</a>{% endif %}
+        {% else %}<a href="/login">Sign in</a><a class="btn" href="/register">Sign up</a>{% endif %}
       </div>
       <a class="navmobile btn secondary" href="/login">Account</a>
-    </div></nav>{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="container"><div class="flash {{cat}}">{{msg}}</div></div>{% endfor %}{% endwith %}<main class="container"><div class="card formbox"><div class="eyebrow">Secure access</div><h2>Sign in</h2><p class="muted">Use your Nova Investment account credentials.</p><form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="field"><label>Email</label><input type="email" name="email" required></div><div class="field"><label>Password</label><input type="password" name="password" required></div><button class="btn" style="width:100%">Sign in</button></form></div></main>
+    </div></nav>{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="container"><div class="flash {{cat}}">{{msg}}</div></div>{% endfor %}{% endwith %}<main class="container"><div class="card formbox"><div class="eyebrow">Secure access</div><h2>Sign in</h2><p class="muted">Use your Nova Investment account credentials.</p><form method="post"><div class="field"><label>Email</label><input type="email" name="email" required></div><div class="field"><label>Password</label><input type="password" name="password" required></div><button class="btn" style="width:100%">Sign in</button><p class="muted" style="margin-top:14px;text-align:center"><a href="/forgot-password">Forgot password?</a> · <a href="/register">Create an account</a></p></form></div></main>
 <div id="toast-wrap"></div>
 <style>
 #toast-wrap{position:fixed;right:18px;bottom:18px;width:min(390px,calc(100vw - 28px));z-index:9999}
